@@ -1,0 +1,48 @@
+# Local OpenID Connect provider for trying out the CLI.
+#
+#   docker compose up -d
+#   export OIDCCLI_ISSUER=http://localhost:8081/realms/demo
+#   export OIDCCLI_CLIENT_ID=oidc-cli
+#   ./oidc-cli serve --audience demo-api &
+#   ./oidc-cli call
+#
+# Log in as demo / demo. Admin console: http://localhost:8081 (admin / admin).
+#
+# Development settings only: in-memory database, HTTP without TLS, fixed
+# bootstrap credentials. Do not expose this to anything but your own machine.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    container_name: oidc-cli-keycloak
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      # Renamed from KEYCLOAK_ADMIN/KEYCLOAK_ADMIN_PASSWORD in Keycloak 26.
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # The published port differs from the container port, so the hostname has
+      # to be pinned: it ends up in the issuer claim and in every URL of the
+      # discovery document.
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: info
+    ports:
+      # Bound to the loopback interface only, and not to 8080, which the
+      # example resource server (`oidc-cli serve`) uses.
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - ./deploy/keycloak/demo-realm.json:/opt/keycloak/data/import/demo-realm.json:ro
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/9000; printf ''GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'' >&3; grep -q ''"status": "UP"'' <&3'
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
